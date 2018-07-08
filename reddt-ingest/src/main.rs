@@ -19,48 +19,61 @@ struct AuthResponse {
     error: i32,
 }
 
-fn authenticate(conf: Config) -> Result<AuthResponse, reqwest::Error>{
-    let client_id = conf.client_id;
-    let client_secret = conf.client_secret;
-    let username = conf.username;
-    let user_agent = conf.user_agent;
-
-    // Get access token
-    let client = reqwest::Client::new();
-    let auth_endpoint = "https://www.reddit.com/api/v1/access_token";
-
-    // Set headers
-    let mut headers = Headers::new();
-    headers.set(
-       Authorization(
-           Basic {
-               username: client_id.to_owned(),
-               password: Some(client_secret.to_owned())
-           }
-       )
-    );
-    headers.set(UserAgent::new(user_agent));
-
-    // Set body
-    let mut params = HashMap::new();
-    params.insert("grant_type", "client_credentials");
-    params.insert("device_id", "1");
-
-    // Set headers
-    let mut response = client.post(auth_endpoint)
-        .headers(headers)
-        .form(&params)
-        .send()
-        .unwrap();
-    let json: AuthResponse  = response.json()?;
-    Ok(json)
+struct RedditClient {
+    auth_token: String,
+    conf: Config,
 }
 
-#[derive(Debug, Deserialize)]
+impl RedditClient {
+    pub fn new(conf: Config) -> RedditClient {
+        let mut rc = RedditClient {
+            conf: conf,
+            auth_token: String::new(),
+        };
+        rc.authenticate();
+        rc
+    }
+
+    fn authenticate(&mut self) {
+        // Get access token
+        let client = reqwest::Client::new();
+        let auth_endpoint = "https://www.reddit.com/api/v1/access_token";
+
+        // Set headers
+        let mut headers = Headers::new();
+        headers.set(
+           Authorization(
+               Basic {
+                   username: self.conf.client_id.to_owned(),
+                   password: Some(self.conf.client_secret.to_owned())
+               }
+           )
+        );
+
+        headers.set(UserAgent::new(self.conf.user_agent.clone()));
+
+        // Set body
+        let mut params = HashMap::new();
+        params.insert("grant_type", "client_credentials");
+        params.insert("device_id", "1");
+
+        // Set headers
+        let mut response = client.post(auth_endpoint)
+            .headers(headers)
+            .form(&params)
+            .send()
+            .unwrap();
+
+        let json: AuthResponse  = response.json().unwrap();
+        self.auth_token = json.access_token;
+    }
+}
+
+#[derive(Deserialize)]
 struct Config {
     client_id: String,
     client_secret: String,
-    username: String,
+    username: String,  // TODO: Do we need this?
     user_agent: String,
 }
 
@@ -77,6 +90,5 @@ fn main() {
         return
     }
     let decoded: Config = toml::from_str(&input).unwrap();
-    let resp = authenticate(decoded);
-    println!("{}", resp.unwrap().access_token);
+    let rc = RedditClient::new(decoded);
 }
