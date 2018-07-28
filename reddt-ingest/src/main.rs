@@ -8,6 +8,7 @@ use std::fs;
 use std::fmt;
 use std::fs::File;
 use std::env;
+use std::error::Error;
 use std::io::Read;
 use std::collections::HashMap;
 
@@ -24,6 +25,21 @@ struct AuthResponse {
 struct RedditClient {
     auth_token: String,
     conf: Config,
+}
+
+#[derive(Debug)]
+struct ApiParseError;
+
+impl Error for ApiParseError {
+    fn description(&self) -> &str {
+        "Some kind of failure parsing reddit response"
+    }
+}
+
+impl fmt::Display for ApiParseError{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Failed to parse reddit response")
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -136,8 +152,7 @@ impl RedditClient {
         self.auth_token = json.access_token;
     }
 
-    // TODO: What should this return?
-    pub fn get_subreddit(&self) {
+    pub fn get_subreddit(&self) -> Result<RootInterface, ApiParseError> {
         println!("Attempting to get subreddit");
         let client = reqwest::Client::new();
         let url = "https://oauth.reddit.com/r/news";
@@ -157,21 +172,14 @@ impl RedditClient {
             .send()
             .expect("Failed to send request");
 
-        let root_interface = response.json::<RootInterface>();
-        println!("{:?}", root_interface);
-        /*
         if let Ok(root_interface) = response.json::<RootInterface>() {
+            println!("Success!");
             println!("{:?}", root_interface);
+            return Ok(root_interface);
         } else {
-            println!("uh oh something went wrong");
-            println!("{:?}", root_interface);
+            println!("Failure!");
+            return Err(ApiParseError);
         }
-        */
-
-        // println!("{}", response.text().unwrap());
-        // let json: RootInterface = response.json().unwrap();
-        // println!("Parsed object");
-        // fs::write("subreddit_response.json", response.text().unwrap()).expect("Unable to write file");
     }
 }
 
