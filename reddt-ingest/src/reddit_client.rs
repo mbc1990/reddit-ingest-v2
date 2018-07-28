@@ -102,11 +102,33 @@ impl RedditClient {
 
         if let Ok(root_interface) = response.json::<RootInterface>() {
             println!("Success!");
-            println!("{:?}", root_interface);
             return Ok(root_interface);
         } else {
             println!("Failure!");
             return Err(ApiParseError);
         }
+
     }
+
+    // TODO: Get comments from story
+    /*
+    pub fn get_comments(&self, story_url: String) {
+        println!("Attempting to get comments");
+        // Set headers
+        let mut headers = Headers::new();
+        headers.set(
+            Authorization(
+                Bearer {
+                    token: self.auth_token.to_owned()
+                }
+            )
+        );
+        headers.set(UserAgent::new(self.conf.user_agent.clone()));
+        let mut response = client.get(story_url)
+            .headers(headers)
+            .send()
+            .expect("Failed to send request");
+        println!("{:?}", response);
+    }
+    */
 }

@@ -26,5 +26,11 @@ fn main() {
     }
     let decoded: config::Config = toml::from_str(&input).unwrap();
     let rc = reddit_client::RedditClient::new(decoded);
-    rc.get_subreddit();
+    let test_sub = rc.get_subreddit().unwrap();
+
+    // For child in test_sub.data.children
+    for child in &test_sub.data.children.unwrap() {
+        let url = &child.data.permalink;
+        println!("Fetching comments for {}", url);
+    }
 }

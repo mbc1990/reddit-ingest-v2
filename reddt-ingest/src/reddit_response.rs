@@ -4,7 +4,7 @@ pub struct Data {
 
   dist: Option<i64>,
 
-  children: Option<Vec<DataRootInterface>>,
+  pub children: Option<Vec<DataRootInterface>>,
 
   after: Option<String>,
 
@@ -43,7 +43,7 @@ pub struct Data1 {
   id: String,
   author: String,
   num_comments: i64,
-  permalink: String,
+  pub permalink: String,
   stickied: bool,
   url: Option<String>,
   created_utc: f64,
@@ -53,12 +53,12 @@ pub struct Data1 {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RootInterface {
   kind: String,
-  data: Data,
+  pub data: Data,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DataRootInterface{
   kind: String,
-  data: Data1,
+  pub data: Data1,
 }
 
