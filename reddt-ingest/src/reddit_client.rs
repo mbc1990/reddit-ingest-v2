@@ -1,3 +1,5 @@
+extern crate serde_json;
+
 use std::fmt;
 use std::error::Error;
 use std::collections::HashMap;
@@ -31,7 +33,7 @@ impl Error for ApiParseError {
 
 impl fmt::Display for ApiParseError{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Failed to parse reddit response")
+        write!(f, "Failed to parse response")
     }
 }
 
@@ -80,10 +82,10 @@ impl RedditClient {
         self.auth_token = json.access_token;
     }
 
-    pub fn get_subreddit(&self) -> Result<RootInterface, ApiParseError> {
+    pub fn get_subreddit(&self) -> Result<serde_json::Value, serde_json::Error> {
         println!("Attempting to get subreddit");
         let client = Client::new();
-        let url = "https://oauth.reddit.com/r/news";
+        let url = "https://oauth.reddit.com/r/the_donald";
 
         // Set headers
         let mut headers = Headers::new();
@@ -100,6 +102,11 @@ impl RedditClient {
             .send()
             .expect("Failed to send request");
 
+        let v: serde_json::Value = serde_json::from_str(&response.text().unwrap())?;
+        println!("{:?}", v);
+        return Ok(v);
+
+        /*
         if let Ok(root_interface) = response.json::<RootInterface>() {
             println!("Success!");
             return Ok(root_interface);
@@ -107,13 +114,13 @@ impl RedditClient {
             println!("Failure!");
             return Err(ApiParseError);
         }
-
+        */
     }
 
-    // TODO: Get comments from story
-    /*
-    pub fn get_comments(&self, story_url: String) {
+    pub fn get_comments(&self, url: &String) -> Result<RootInterface, ApiParseError> {
         println!("Attempting to get comments");
+        let client = Client::new();
+
         // Set headers
         let mut headers = Headers::new();
         headers.set(
@@ -124,7 +131,41 @@ impl RedditClient {
             )
         );
         headers.set(UserAgent::new(self.conf.user_agent.clone()));
-        let mut response = client.get(story_url)
+        let mut response = client.get(url)
+            .headers(headers)
+            .send()
+            .expect("Failed to send request");
+
+        // TODO: RootInterface only applies to subreddis? So it's not being parsed correctly here?
+        if let Ok(root_interface) = response.json::<RootInterface>() {
+            println!("Success!");
+            return Ok(root_interface);
+        } else {
+            println!("Failure!");
+            println!("{:?}", response.status());
+            println!("{:?}", response.text());
+            return Err(ApiParseError);
+        }
+    }
+
+    /*
+    pub fn get_comments(&self, story_url: String) {
+        println!("Attempting to get comments");
+        // Set headers
+        let client = Client::new();
+        let mut headers = Headers::new();
+        headers.set(
+            Authorization(
+                Bearer {
+                    token: self.auth_token.to_owned()
+                }
+            )
+        );
+        headers.set(UserAgent::new(self.conf.user_agent.clone()));
+        let base = String::from("https://oauth.reddit.com");
+        base.push_str(&story_url);
+        println!("URL: {}", base);
+        let mut response = client.get(base.to_string())
             .headers(headers)
             .send()
             .expect("Failed to send request");

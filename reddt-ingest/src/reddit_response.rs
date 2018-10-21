@@ -1,13 +1,9 @@
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Data {
   modhash: Option<String>,
-
   dist: Option<i64>,
-
   pub children: Option<Vec<DataRootInterface>>,
-
   after: Option<String>,
-
   before: Option<String>,
 }
 

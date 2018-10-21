@@ -29,8 +29,15 @@ fn main() {
     let test_sub = rc.get_subreddit().unwrap();
 
     // For child in test_sub.data.children
+    /*
     for child in &test_sub.data.children.unwrap() {
         let url = &child.data.permalink;
-        println!("Fetching comments for {}", url);
+        println!("Getting comments for {}", url);
+        let full_url =  &["https://oauth.reddit.com", url].concat();
+        println!("{:?}", full_url);
+        let comments = rc.get_comments(full_url);
+        println!("{:?}", comments);
+        return
     }
+    */
 }
