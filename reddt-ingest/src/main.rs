@@ -27,6 +27,16 @@ fn main() {
     let decoded: config::Config = toml::from_str(&input).unwrap();
     let rc = reddit_client::RedditClient::new(decoded);
     let test_sub = rc.get_subreddit().unwrap();
+    let stories = &test_sub["data"]["children"].as_array().unwrap();
+    for story in stories.iter() {
+        let author = &story["data"]["author"];
+        let permalink = &story["data"]["permalink"];
+        let title = &story["data"]["title"];
+        println!("{:?}", author);
+        println!("{:?}", title);
+        println!("{:?}", permalink);
+        println!("---------------------------");
+    }
 
     // For child in test_sub.data.children
     /*
