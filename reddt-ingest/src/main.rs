@@ -9,7 +9,6 @@ use std::env;
 use std::io::Read;
 
 mod reddit_client;
-mod reddit_response;
 mod config;
 
 fn main() {
@@ -27,7 +26,7 @@ fn main() {
     let decoded: config::Config = toml::from_str(&input).unwrap();
     let rc = reddit_client::RedditClient::new(decoded);
     let test_sub = rc.get_subreddit().unwrap();
-    let stories = &test_sub["data"]["children"].as_array().unwrap();
+    let stories = test_sub["data"]["children"].as_array().unwrap();
     for story in stories.iter() {
         let author = &story["data"]["author"];
         let permalink = &story["data"]["permalink"];
@@ -36,18 +35,16 @@ fn main() {
         println!("{:?}", title);
         println!("{:?}", permalink);
         println!("---------------------------");
-    }
+        let full_url =  &["https://oauth.reddit.com", permalink.as_str().unwrap()].concat();
 
-    // For child in test_sub.data.children
-    /*
-    for child in &test_sub.data.children.unwrap() {
-        let url = &child.data.permalink;
-        println!("Getting comments for {}", url);
-        let full_url =  &["https://oauth.reddit.com", url].concat();
-        println!("{:?}", full_url);
-        let comments = rc.get_comments(full_url);
-        println!("{:?}", comments);
-        return
+        let test_comments = rc.get_comments(full_url).unwrap();
+        for entry in test_comments.as_array().unwrap().iter() {
+            println!("Found a value in the array");
+            println!("{:?}", entry);
+
+            let raw_comments = rc.parse_comment_tree(entry);
+            println!("{:?}", raw_comments)
+        }
+        break;
     }
-    */
 }
