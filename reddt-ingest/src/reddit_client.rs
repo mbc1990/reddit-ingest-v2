@@ -105,15 +105,21 @@ impl RedditClient {
         return Ok(v);
     }
 
-    pub fn parse_comment_tree(&self, entry: &serde_json::Value) -> Vec<&str> {
-        let comments = Vec::new();
-        let inner_entries = entry["data"]["children"].as_array().unwrap();
+    pub fn parse_comment_tree(&self, entry: &serde_json::Value) -> Vec<String> {
+        let mut comments = Vec::new();
+        // TODO: This only lives to the end of the method, but its values are added to comments, which is returned
+        let inner_entries = entry["data"]["children"].as_array().unwrap().to_owned();
         // TODO: Get top level comment, add to vector
         // TODO: recursively call parse_comment_tree for each child
         // TODO: return top level comment + all child comments
         for inner in inner_entries.iter() {
-            println!("Inner entry");
-            println!("{:?}", inner);
+            let comment_body = &inner["data"]["body"];
+            comments.push(comment_body.to_string());
+            // println!("{:?}", comment_body);
+
+            // let comment_author = &inner["data"]["author"];
+            // let comment_permalink = &inner["data"]["permalink"];
+            // comments.push(comment_body.as_str().to_owned().unwrap());
         }
         return comments;
     }

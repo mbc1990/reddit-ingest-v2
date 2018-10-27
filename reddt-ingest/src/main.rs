@@ -36,14 +36,15 @@ fn main() {
         println!("{:?}", permalink);
         println!("---------------------------");
         let full_url =  &["https://oauth.reddit.com", permalink.as_str().unwrap()].concat();
-
         let test_comments = rc.get_comments(full_url).unwrap();
         for entry in test_comments.as_array().unwrap().iter() {
             println!("Found a value in the array");
             println!("{:?}", entry);
-
-            let raw_comments = rc.parse_comment_tree(entry);
-            println!("{:?}", raw_comments)
+            let raw_comments = rc.parse_comment_tree(&entry);
+            println!("{:?}", raw_comments);
+            for comment in raw_comments.iter() {
+                println!("{:?}", comment)
+            }
         }
         break;
     }
