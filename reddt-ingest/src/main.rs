@@ -23,19 +23,19 @@ fn main() {
 		println!("Must pass in file name of configuration");
         return
     }
+    println!("{:?}", input);
     let decoded: config::Config = toml::from_str(&input).unwrap();
+    println!("{:?}", decoded.subreddits);
+    let subreddits = decoded.subreddits.clone();
     let rc = reddit_client::RedditClient::new(decoded);
 
-    let needle = "soros";
-
-    // let subreddits = ["https://oauth.reddit.com/r/the_donald", "https://oauth.reddit.com/r/conservative,","https://oauth.reddit.com/r/libertarian"];
-
-    let subreddits = ["https://oauth.reddit.com/r/news", "https://oauth.reddit.com/r/worldnews,","https://oauth.reddit.com/r/boston"];
-
+    let needle = "liberal";
 
     for subreddit in subreddits.iter() {
-        let test_sub = rc.get_subreddit(subreddits[0]).unwrap();
+        println!("{:?}", subreddit);
+        let test_sub = rc.get_subreddit(subreddit).unwrap();
         let stories = test_sub["data"]["children"].as_array().unwrap();
+        let mut total_comments = 0;
         for story in stories.iter() {
             let permalink = &story["data"]["permalink"];
             let full_url = &["https://oauth.reddit.com", permalink.as_str().unwrap()].concat();
@@ -44,11 +44,12 @@ fn main() {
                 let raw_comments = rc.parse_comment_tree(&entry);
                 for comment in raw_comments.iter() {
                     if comment.contains(needle) {
-                        // TODO: Duplication?
                         println!("{:?}", comment)
                     }
+                    total_comments += 1;
                 }
             }
         }
+        println!("{:?} total comments", total_comments);
     }
 }

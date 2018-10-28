@@ -59,10 +59,9 @@ impl RedditClient {
     }
 
     // TODO: this body is the same as get_comments, refactor`
-    pub fn get_subreddit(&self, url: &str ) -> Result<serde_json::Value, serde_json::Error> {
+    pub fn get_subreddit(&self, subreddit: &str ) -> Result<serde_json::Value, serde_json::Error> {
+        let url = &["https://oauth.reddit.com/r/", subreddit].concat();
         let client = Client::new();
-        // let url = "https://oauth.reddit.com/r/news";
-
         let mut headers = Headers::new();
         headers.set(
             Authorization(
@@ -99,6 +98,7 @@ impl RedditClient {
         let v: serde_json::Value = serde_json::from_str(&response.text().unwrap())?;
         return Ok(v);
     }
+
     // TODO: To get whole comment trees, needs to make paging http requests
     pub fn parse_comment_tree(&self, entry: &serde_json::Value) -> Vec<String> {
         let mut comments = Vec::new();
@@ -111,7 +111,7 @@ impl RedditClient {
             if inner["data"]["replies"].is_null() {
                 continue;
             }
-            let comment_body = &inner["data"]["body"];
+            let comment_body = &inner["data"]["body"].to_string();
             comments.push(comment_body.to_string());
             let children = &inner["data"]["replies"];
             let child_comments = &self.parse_comment_tree(children);
