@@ -23,13 +23,11 @@ fn main() {
 		println!("Must pass in file name of configuration");
         return
     }
-    println!("{:?}", input);
     let decoded: config::Config = toml::from_str(&input).unwrap();
-    println!("{:?}", decoded.subreddits);
     let subreddits = decoded.subreddits.clone();
     let rc = reddit_client::RedditClient::new(decoded);
 
-    let needle = "liberal";
+    let needle = "antifa";
 
     for subreddit in subreddits.iter() {
         println!("{:?}", subreddit);
@@ -50,6 +48,6 @@ fn main() {
                 }
             }
         }
-        println!("{:?} total comments", total_comments);
+        println!("{:?} total comments for {:?}", total_comments, subreddit);
     }
 }
