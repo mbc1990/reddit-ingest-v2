@@ -59,10 +59,9 @@ impl RedditClient {
     }
 
     // TODO: this body is the same as get_comments, refactor`
-    pub fn get_subreddit(&self) -> Result<serde_json::Value, serde_json::Error> {
-        println!("Attempting to get subreddit");
+    pub fn get_subreddit(&self, url: &str ) -> Result<serde_json::Value, serde_json::Error> {
         let client = Client::new();
-        let url = "https://oauth.reddit.com/r/news";
+        // let url = "https://oauth.reddit.com/r/news";
 
         let mut headers = Headers::new();
         headers.set(
@@ -77,15 +76,11 @@ impl RedditClient {
             .headers(headers)
             .send()
             .expect("Failed to send request");
-        println!("Response for get subreddit: ");
         let v: serde_json::Value = serde_json::from_str(&response.text().unwrap())?;
-        println!("{:?}", v);
         return Ok(v)
     }
 
     pub fn get_comments(&self, url: &String) -> Result<serde_json::Value, serde_json::Error> {
-        println!("Attempting to get comments");
-        println!("{:?}", url);
         let client = Client::new();
         let mut headers = Headers::new();
         headers.set(
@@ -104,22 +99,23 @@ impl RedditClient {
         let v: serde_json::Value = serde_json::from_str(&response.text().unwrap())?;
         return Ok(v);
     }
-
+    // TODO: To get whole comment trees, needs to make paging http requests
     pub fn parse_comment_tree(&self, entry: &serde_json::Value) -> Vec<String> {
         let mut comments = Vec::new();
-        // TODO: This only lives to the end of the method, but its values are added to comments, which is returned
+        if entry["data"]["children"].is_null() {
+            return comments;
+        }
+
         let inner_entries = entry["data"]["children"].as_array().unwrap().to_owned();
-        // TODO: Get top level comment, add to vector
-        // TODO: recursively call parse_comment_tree for each child
-        // TODO: return top level comment + all child comments
         for inner in inner_entries.iter() {
+            if inner["data"]["replies"].is_null() {
+                continue;
+            }
             let comment_body = &inner["data"]["body"];
             comments.push(comment_body.to_string());
-            // println!("{:?}", comment_body);
-
-            // let comment_author = &inner["data"]["author"];
-            // let comment_permalink = &inner["data"]["permalink"];
-            // comments.push(comment_body.as_str().to_owned().unwrap());
+            let children = &inner["data"]["replies"];
+            let child_comments = &self.parse_comment_tree(children);
+            comments.append(&mut child_comments.clone());
         }
         return comments;
     }

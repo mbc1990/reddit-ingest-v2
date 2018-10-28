@@ -25,27 +25,30 @@ fn main() {
     }
     let decoded: config::Config = toml::from_str(&input).unwrap();
     let rc = reddit_client::RedditClient::new(decoded);
-    let test_sub = rc.get_subreddit().unwrap();
-    let stories = test_sub["data"]["children"].as_array().unwrap();
-    for story in stories.iter() {
-        let author = &story["data"]["author"];
-        let permalink = &story["data"]["permalink"];
-        let title = &story["data"]["title"];
-        println!("{:?}", author);
-        println!("{:?}", title);
-        println!("{:?}", permalink);
-        println!("---------------------------");
-        let full_url =  &["https://oauth.reddit.com", permalink.as_str().unwrap()].concat();
-        let test_comments = rc.get_comments(full_url).unwrap();
-        for entry in test_comments.as_array().unwrap().iter() {
-            println!("Found a value in the array");
-            println!("{:?}", entry);
-            let raw_comments = rc.parse_comment_tree(&entry);
-            println!("{:?}", raw_comments);
-            for comment in raw_comments.iter() {
-                println!("{:?}", comment)
+
+    let needle = "soros";
+
+    // let subreddits = ["https://oauth.reddit.com/r/the_donald", "https://oauth.reddit.com/r/conservative,","https://oauth.reddit.com/r/libertarian"];
+
+    let subreddits = ["https://oauth.reddit.com/r/news", "https://oauth.reddit.com/r/worldnews,","https://oauth.reddit.com/r/boston"];
+
+
+    for subreddit in subreddits.iter() {
+        let test_sub = rc.get_subreddit(subreddits[0]).unwrap();
+        let stories = test_sub["data"]["children"].as_array().unwrap();
+        for story in stories.iter() {
+            let permalink = &story["data"]["permalink"];
+            let full_url = &["https://oauth.reddit.com", permalink.as_str().unwrap()].concat();
+            let test_comments = rc.get_comments(full_url).unwrap();
+            for entry in test_comments.as_array().unwrap().iter() {
+                let raw_comments = rc.parse_comment_tree(&entry);
+                for comment in raw_comments.iter() {
+                    if comment.contains(needle) {
+                        // TODO: Duplication?
+                        println!("{:?}", comment)
+                    }
+                }
             }
         }
-        break;
     }
 }
