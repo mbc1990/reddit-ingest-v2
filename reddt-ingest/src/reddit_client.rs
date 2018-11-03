@@ -61,7 +61,6 @@ impl RedditClient {
 
     pub fn do_authenticated_request(&self, api_path: &String) -> Result<serde_json::Value, serde_json::Error> {
         let url = &["https://oauth.reddit.com/", api_path].concat();
-        println!("Doing authenticated query for url: {:?} ", url);
         let client = Client::new();
         let mut headers = Headers::new();
         headers.set(
@@ -82,6 +81,7 @@ impl RedditClient {
     }
 
     // TODO: To get whole comment trees, needs to make paging http requests
+    // TODO: Seems like reddit only returns ~200 comments in an api request
     pub fn parse_comment_tree(&self, entry: &serde_json::Value) -> Vec<String> {
         let mut comments = Vec::new();
         if entry["data"]["children"].is_null() {
@@ -90,15 +90,30 @@ impl RedditClient {
 
         let inner_entries = entry["data"]["children"].as_array().unwrap().to_owned();
         for inner in inner_entries.iter() {
-            if inner["data"]["replies"].is_null() {
-                continue;
-            }
+
+            // First get the current (parent) comment's text
             let comment_body = &inner["data"]["body"].to_string();
             comments.push(comment_body.to_string());
+
+            // If replies are null, that means either there are no more, or we need to make a request to /morechildren
+            if inner["data"]["replies"].is_null() {
+                if inner["kind"] == "more" {
+                    continue;
+                    //  println!("Trying to get more comments for {:?}", inner);
+                    // TODO: Make a request for more comments, and continue parsing recursively
+                    // TODO: This seems to be the endpoint api/morechildren
+                } else {
+                    // We are at a leaf of a comment tree and can stop
+                    continue;
+                }
+            }
+
+            // Go over the children and recursively gather their comments
             let children = &inner["data"]["replies"];
             let child_comments = &self.parse_comment_tree(children);
             comments.append(&mut child_comments.clone());
         }
+
         return comments;
     }
 }

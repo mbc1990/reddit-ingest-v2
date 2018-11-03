@@ -28,7 +28,7 @@ fn main() {
     let subreddits = decoded.subreddits.clone();
     let rc = reddit_client::RedditClient::new(decoded);
 
-    let needle = "libs";
+    let needle = "soros funded";
 
     for subreddit in subreddits.iter() {
         println!("{:?}", subreddit);
@@ -37,19 +37,24 @@ fn main() {
         let stories = resp["data"]["children"].as_array().unwrap();
         let mut total_comments = 0;
         for story in stories.iter() {
+            // Sort by new since this is supposed to be semi-real time
             let permalink = &story["data"]["permalink"];
+            let comments_query = &[permalink.as_str().unwrap(), "?sort=new"].concat();
 
-            // TODO: This can't possibly be the simplest way to write this, but it *does* fix the problem of ending up with escaped \" characters in  the query
-            let comments_query = permalink.as_str().unwrap().to_string();
-
-            let comments = rc.do_authenticated_request(&comments_query).unwrap();
+            let comments = rc.do_authenticated_request(comments_query).unwrap();
             for entry in comments.as_array().unwrap().iter() {
+                let mut comments_for_story = 0;
                 let raw_comments = rc.parse_comment_tree(&entry);
                 for comment in raw_comments.iter() {
                     if comment.contains(needle) {
                         println!("{:?}", comment)
                     }
                     total_comments += 1;
+                    comments_for_story += 1;
+                }
+                // The first entry has no comments? TODO: Confirm the api structure
+                if comments_for_story > 1 {
+                    println!("{:?} total comments for story: {:?}", comments_for_story, permalink);
                 }
             }
         }
