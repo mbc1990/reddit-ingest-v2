@@ -23,22 +23,27 @@ fn main() {
 		println!("Must pass in file name of configuration");
         return
     }
+
     let decoded: config::Config = toml::from_str(&input).unwrap();
     let subreddits = decoded.subreddits.clone();
     let rc = reddit_client::RedditClient::new(decoded);
 
-    let needle = "antifa";
+    let needle = "libs";
 
     for subreddit in subreddits.iter() {
         println!("{:?}", subreddit);
-        let test_sub = rc.get_subreddit(subreddit).unwrap();
-        let stories = test_sub["data"]["children"].as_array().unwrap();
+        let api_query = &["r/", subreddit].concat();
+        let resp = rc.do_authenticated_request(api_query).unwrap();
+        let stories = resp["data"]["children"].as_array().unwrap();
         let mut total_comments = 0;
         for story in stories.iter() {
             let permalink = &story["data"]["permalink"];
-            let full_url = &["https://oauth.reddit.com", permalink.as_str().unwrap()].concat();
-            let test_comments = rc.get_comments(full_url).unwrap();
-            for entry in test_comments.as_array().unwrap().iter() {
+
+            // TODO: This can't possibly be the simplest way to write this, but it *does* fix the problem of ending up with escaped \" characters in  the query
+            let comments_query = permalink.as_str().unwrap().to_string();
+
+            let comments = rc.do_authenticated_request(&comments_query).unwrap();
+            for entry in comments.as_array().unwrap().iter() {
                 let raw_comments = rc.parse_comment_tree(&entry);
                 for comment in raw_comments.iter() {
                     if comment.contains(needle) {

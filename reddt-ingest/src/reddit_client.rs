@@ -27,6 +27,7 @@ impl RedditClient {
     }
 
     // Basic Authentication
+    // TODO: This will need to be renewed from time to time
     fn authenticate(&mut self) {
         let client = Client::new();
         let auth_endpoint = "https://www.reddit.com/api/v1/access_token";
@@ -58,28 +59,9 @@ impl RedditClient {
         self.auth_token = json.access_token;
     }
 
-    // TODO: this body is the same as get_comments, refactor`
-    pub fn get_subreddit(&self, subreddit: &str ) -> Result<serde_json::Value, serde_json::Error> {
-        let url = &["https://oauth.reddit.com/r/", subreddit].concat();
-        let client = Client::new();
-        let mut headers = Headers::new();
-        headers.set(
-            Authorization(
-                Bearer {
-                    token: self.auth_token.clone()
-                }
-            )
-        );
-        headers.set(UserAgent::new(self.conf.user_agent.clone()));
-        let mut response = client.get(url)
-            .headers(headers)
-            .send()
-            .expect("Failed to send request");
-        let v: serde_json::Value = serde_json::from_str(&response.text().unwrap())?;
-        return Ok(v)
-    }
-
-    pub fn get_comments(&self, url: &String) -> Result<serde_json::Value, serde_json::Error> {
+    pub fn do_authenticated_request(&self, api_path: &String) -> Result<serde_json::Value, serde_json::Error> {
+        let url = &["https://oauth.reddit.com/", api_path].concat();
+        println!("Doing authenticated query for url: {:?} ", url);
         let client = Client::new();
         let mut headers = Headers::new();
         headers.set(
