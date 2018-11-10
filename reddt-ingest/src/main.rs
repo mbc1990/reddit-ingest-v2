@@ -17,9 +17,7 @@ use reqwest::Client;
 use reqwest::header::{Headers, Authorization, Basic, UserAgent};
 use std::collections::HashMap;
 
-
 mod reddit_api_client;
-mod reddit_client;
 mod config;
 
 fn authenticate(client_id: String, client_secret: String, user_agent: String) -> String {
