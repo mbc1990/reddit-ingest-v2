@@ -39,6 +39,8 @@ impl RedditAPIClient {
             )
         );
         headers.set(UserAgent::new(self.user_agent.clone()));
+
+        // TODO: Add error handling - this is where auth failures will come from
         let mut response = client.get(url)
             .headers(headers)
             .send()

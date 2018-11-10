@@ -3,13 +3,14 @@ extern crate serde_derive;
 extern crate serde_json;
 extern crate serde;
 extern crate toml;
+extern crate rand;
 extern crate reqwest;
 
+use rand::Rng;
 use std::fs::File;
 use std::env;
 use std::io::Read;
 use std::sync::mpsc::channel;
-
 use std::thread;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
@@ -152,7 +153,7 @@ fn main() {
     // These are the first tasks to be passed to workers
     let subreddits = decoded.subreddits.clone();
 
-    let num_worker_threads = 4;
+    let num_worker_threads = 8;
 
     // Channels for sending work to workers
     let mut worker_txs = Vec::new();
@@ -176,7 +177,8 @@ fn main() {
     for subreddit in subreddits.iter() {
         let copied_input = subreddit.clone();
         // TODO: Randomly select a worker
-        let worker = worker_txs.first().unwrap();
+        let worker_idx = rand::thread_rng().gen_range(0, num_worker_threads);
+        let worker = worker_txs.get(worker_idx).unwrap();
         let res = worker.send(copied_input.to_string());
         match res {
             Ok(_val) => {
