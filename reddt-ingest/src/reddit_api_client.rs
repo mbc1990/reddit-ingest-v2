@@ -1,10 +1,7 @@
 extern crate serde_json;
 
-use std::collections::HashMap;
-
-use reqwest::header::{Headers, Authorization, Basic, UserAgent, Bearer};
+use reqwest::header::{Headers, Authorization, UserAgent, Bearer};
 use reqwest::Client;
-use config;
 
 #[derive(Deserialize)]
 pub struct AuthResponse {
@@ -24,6 +21,10 @@ impl RedditAPIClient {
             user_agent
         };
         rac
+    }
+
+    pub fn print_auth_token(&self) {
+        println!("{:?}", self.auth_token);
     }
 
     pub fn do_authenticated_request(&self, api_path: &String) -> Result<serde_json::Value, serde_json::Error> {

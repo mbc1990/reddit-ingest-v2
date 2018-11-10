@@ -4,19 +4,17 @@ extern crate serde_json;
 extern crate serde;
 extern crate toml;
 extern crate reqwest;
-extern crate threadpool;
 
 use std::fs::File;
 use std::env;
 use std::io::Read;
 use std::sync::mpsc::channel;
 
-use threadpool::ThreadPool;
 use std::thread;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
 use reqwest::Client;
-use reqwest::header::{Headers, Authorization, Basic, UserAgent, Bearer};
+use reqwest::header::{Headers, Authorization, Basic, UserAgent};
 use std::collections::HashMap;
 
 
@@ -91,18 +89,49 @@ pub fn parse_comment_tree(entry: &serde_json::Value) -> Vec<String> {
 }
 
 // TODO: If this is the "subreddit" worker, it should have another sender to enqueue comments requests
-// TODO: Need a worker client here - pass initial auth token?
 // pub fn worker(tx_output: Sender<String>, tx_auth_manager: Sender<String>, rx_work_queue: Receiver<String>, rx_auth_manager: Receiver<String>) {
+// TODO: this should handle subreddit queries AND comment queries
 pub fn worker(rx_work_queue: Receiver<String>, tx_output: Sender<String>, auth_token: String, user_agent: String) {
     let client = reddit_api_client::RedditAPIClient::new(auth_token, user_agent);
     loop {
+        // TODO: this should return a struct with the work type - either subreddit or comments
         let new_work = rx_work_queue.try_recv();
         match new_work {
             Ok(val) => {
                 println!("Received new work: {:?}", val);
+                // Perform subreddit api query
+                let api_path = &["/r/", val.as_str()].concat();
+                let subreddit_result = client.do_authenticated_request(api_path);
+                match subreddit_result {
+                    Ok(val) => {
+                        println!("Got subreddit: {:?}", val);
+                        // TODO: Send work requests to worker queue to collect comments
+                        let stories = val["data"]["children"].as_array().unwrap();
+                        for their_story in stories.iter() {
+                            let permalink = &their_story["data"]["permalink"];
+                            let comments_query = &[permalink.as_str().unwrap(), "?sort=new"].concat();
+                            let comments = client.do_authenticated_request(comments_query).unwrap();
+                            for entry in comments.as_array().unwrap().iter() {
+                                let mut comments_for_story = 0;
+                                let raw_comments = parse_comment_tree(&entry);
+                                for comment in raw_comments.iter() {
+                                   tx_output.send(comment.to_string()) ;
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("Error getting subreddit: {:?}", e)
+                    }
+
+                }
+
+                /*
                 // TODO: Use the client to make a query
+                client.print_auth_token();
                 let output = &[val, "-output".to_string()].concat();
                 tx_output.send(output.to_string());
+                */
             }
             Err(_e) => {
                 // println!("Error receiving from queue (no data?)")
@@ -151,6 +180,7 @@ fn main() {
         });
     }
 
+    // Populate the queue with subreddits on start
     for subreddit in subreddits.iter() {
         let copied_input = subreddit.clone();
         // TODO: Randomly select a worker
@@ -166,8 +196,12 @@ fn main() {
         }
     }
 
+    let needle = "liberal";
     for output in rx_output.iter() {
-        println!("Received output: {:?}", output);
+        // println!("Received output: {:?}", output);
+        if output.contains(needle) {
+            println!("{:?}", output.as_str());
+        }
     }
 }
 
