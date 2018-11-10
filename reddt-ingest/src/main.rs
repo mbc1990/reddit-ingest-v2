@@ -105,11 +105,11 @@ pub fn worker(rx_work_queue: Receiver<String>, tx_output: Sender<String>, auth_t
                 match subreddit_result {
                     Ok(val) => {
                         println!("Got subreddit: {:?}", val);
-                        // TODO: Send work requests to worker queue to collect comments
                         let stories = val["data"]["children"].as_array().unwrap();
                         for their_story in stories.iter() {
                             let permalink = &their_story["data"]["permalink"];
                             let comments_query = &[permalink.as_str().unwrap(), "?sort=new"].concat();
+                            // TODO: This request should be queued, not done in the same thread as the subreddit request
                             let comments = client.do_authenticated_request(comments_query).unwrap();
                             for entry in comments.as_array().unwrap().iter() {
                                 let mut comments_for_story = 0;
@@ -126,12 +126,6 @@ pub fn worker(rx_work_queue: Receiver<String>, tx_output: Sender<String>, auth_t
 
                 }
 
-                /*
-                // TODO: Use the client to make a query
-                client.print_auth_token();
-                let output = &[val, "-output".to_string()].concat();
-                tx_output.send(output.to_string());
-                */
             }
             Err(_e) => {
                 // println!("Error receiving from queue (no data?)")
@@ -204,75 +198,3 @@ fn main() {
         }
     }
 }
-
-/*
-fn main() {
-    let mut args = env::args();
-    let mut input = String::new();
-    if args.len() > 1 {
-        let name = args.nth(1).unwrap();
-        File::open(&name).and_then(|mut f| {
-            f.read_to_string(&mut input)
-        }).unwrap();
-    } else {
-		println!("Must pass in file name of configuration");
-        return
-    }
-
-    let decoded: config::Config = toml::from_str(&input).unwrap();
-    let subreddits = decoded.subreddits.clone();
-    let rc = reddit_client::RedditClient::new(decoded);
-
-    // TODO: A single thread that periodically adds subreddits to the queue so we continue updating
-
-    // TODO: A worker pool that reads from a queue, making subreddit or comment requests and doing string comparisons (for now)
-    let (tx, rx) = channel();
-    let n_workers = 4;
-    let pool = ThreadPool::new(n_workers);
-
-    // TODO: Second worker pool that does the string comparisons
-
-    let needle = "liberal";
-
-    for subreddit in subreddits.iter() {
-        println!("{:?}", subreddit);
-        let api_query = &["r/", subreddit].concat();
-        let resp = rc.do_authenticated_request(api_query).unwrap();
-        let stories = resp["data"]["children"].as_array().unwrap();
-        let mut total_comments = 0;
-        for their_story in stories.iter() {
-            let story = their_story.clone();
-            pool.execute(move|| {
-                // Sort by new since this is supposed to be semi-real time
-                let permalink = &story["data"]["permalink"];
-                let comments_query = &[permalink.as_str().unwrap(), "?sort=new"].concat();
-
-                let comments = rc.do_authenticated_request(comments_query).unwrap();
-                for entry in comments.as_array().unwrap().iter() {
-                    let mut comments_for_story = 0;
-                    let raw_comments = rc.parse_comment_tree(&entry);
-                    for comment in raw_comments.iter() {
-                        if comment.contains(needle) {
-                            println!("{:?}", comment.as_str());
-
-                            // TODO: This will need to work at some point
-                            tx.send(comment.to_owned());
-                        }
-                        // TODO: This probaly won't work
-                        total_comments += 1;
-                        comments_for_story += 1;
-                    }
-                    // The first entry has no comments? TODO: Confirm the api structure
-                    if comments_for_story > 1 {
-                        println!("{:?} total comments for story: {:?}", comments_for_story, permalink);
-                    }
-                }
-            });
-        }
-        println!("{:?} total comments for {:?}", total_comments, subreddit);
-    }
-    for output in rx.iter() {
-        println!("Output: {:?} ", output);
-    }
-}
-*/
