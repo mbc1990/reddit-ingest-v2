@@ -90,26 +90,23 @@ pub fn parse_comment_tree(entry: &serde_json::Value) -> Vec<String> {
 // TODO: If this is the "subreddit" worker, it should have another sender to enqueue comments requests
 // pub fn worker(tx_output: Sender<String>, tx_auth_manager: Sender<String>, rx_work_queue: Receiver<String>, rx_auth_manager: Receiver<String>) {
 // TODO: this should handle subreddit queries AND comment queries
-pub fn worker(rx_work_queue: Receiver<String>, tx_output: Sender<String>, auth_token: String, user_agent: String) {
-    let client = reddit_api_client::RedditAPIClient::new(auth_token, user_agent);
-    loop {
+pub fn worker(rx_work_queue: Receiver<RedditAPITask>, tx_output: Sender<String>, user_agent: String) {
+    let client = reddit_api_client::RedditAPIClient::new(user_agent);
         // TODO: this should return a struct with the work type - either subreddit or comments
-        let new_work = rx_work_queue.try_recv();
+        let new_work = rx_work_queue.recv();
         match new_work {
-            Ok(val) => {
-                println!("Received new work: {:?}", val);
+            Ok(task) => {
                 // Perform subreddit api query
-                let api_path = &["/r/", val.as_str()].concat();
-                let subreddit_result = client.do_authenticated_request(api_path);
+                let api_path = &["/r/", task.query.as_str()].concat();
+                let subreddit_result = client.do_authenticated_request_with_token(api_path, &task.auth_token);
                 match subreddit_result {
                     Ok(val) => {
-                        println!("Got subreddit: {:?}", val);
                         let stories = val["data"]["children"].as_array().unwrap();
                         for their_story in stories.iter() {
                             let permalink = &their_story["data"]["permalink"];
                             let comments_query = &[permalink.as_str().unwrap(), "?sort=new"].concat();
                             // TODO: This request should be queued, not done in the same thread as the subreddit request
-                            let comments = client.do_authenticated_request(comments_query).unwrap();
+                            let comments = client.do_authenticated_request_with_token(comments_query, &task.auth_token).unwrap();
                             for entry in comments.as_array().unwrap().iter() {
                                 let mut comments_for_story = 0;
                                 let raw_comments = parse_comment_tree(&entry);
@@ -130,7 +127,17 @@ pub fn worker(rx_work_queue: Receiver<String>, tx_output: Sender<String>, auth_t
                 // println!("Error receiving from queue (no data?)")
             }
         }
-    }
+}
+
+// Repeat query every n seconds
+pub fn start(subreddits: Vec<String>, num_workers: i32, worker_txs: Vec<Sender<String>>) {
+
+}
+
+pub struct RedditAPITask {
+    task_type: String,
+    query: String,
+    auth_token: String
 }
 
 fn main() {
@@ -153,7 +160,7 @@ fn main() {
     // These are the first tasks to be passed to workers
     let subreddits = decoded.subreddits.clone();
 
-    let num_worker_threads = 8;
+    let num_worker_threads = 16;
 
     // Channels for sending work to workers
     let mut worker_txs = Vec::new();
@@ -169,17 +176,22 @@ fn main() {
         let auth = initial_auth_token.clone();
         let user_agent = decoded.user_agent.clone();
         thread::spawn(move || {
-            worker(rx_work_queue, out_sender, auth, user_agent);
+            worker(rx_work_queue, out_sender, user_agent);
         });
     }
 
     // Populate the queue with subreddits on start
+    // TODO: Move to function running in separate thread
     for subreddit in subreddits.iter() {
         let copied_input = subreddit.clone();
-        // TODO: Randomly select a worker
+        let task = RedditAPITask {
+            task_type: "subreddit".parse().unwrap(),
+            query: copied_input,
+            auth_token: initial_auth_token.clone()
+        };
         let worker_idx = rand::thread_rng().gen_range(0, num_worker_threads);
         let worker = worker_txs.get(worker_idx).unwrap();
-        let res = worker.send(copied_input.to_string());
+        let res = worker.send(task);
         match res {
             Ok(_val) => {
                 println!("Successfully enqueued {:?}",  subreddit);
@@ -190,11 +202,13 @@ fn main() {
         }
     }
 
-    let needle = "liberal";
+    let needles = vec!["democrat", "liberal"];
     for output in rx_output.iter() {
-        // println!("Received output: {:?}", output);
-        if output.contains(needle) {
-            println!("{:?}", output.as_str());
+        for needle in needles.iter() {
+            if output.contains(needle) {
+                println!("{:?}", output.as_str());
+                // TODO: Write to slack
+            }
         }
     }
 }

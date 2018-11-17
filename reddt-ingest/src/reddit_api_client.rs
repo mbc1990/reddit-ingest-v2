@@ -9,32 +9,26 @@ pub struct AuthResponse {
 }
 
 pub struct RedditAPIClient {
-    auth_token: String,
     user_agent: String
 }
 
 impl RedditAPIClient {
 
-    pub fn new(auth_token: String, user_agent: String) -> RedditAPIClient {
+    pub fn new(user_agent: String) -> RedditAPIClient {
         let mut rac = RedditAPIClient{
-            auth_token,
             user_agent
         };
         rac
     }
 
-    pub fn print_auth_token(&self) {
-        println!("{:?}", self.auth_token);
-    }
-
-    pub fn do_authenticated_request(&self, api_path: &String) -> Result<serde_json::Value, serde_json::Error> {
+    pub fn do_authenticated_request_with_token(&self, api_path: &String, auth_token: &String) -> Result<serde_json::Value, serde_json::Error> {
         let url = &["https://oauth.reddit.com/", api_path].concat();
         let client = Client::new();
         let mut headers = Headers::new();
         headers.set(
             Authorization(
                 Bearer {
-                    token: self.auth_token.clone()
+                    token: auth_token.parse().unwrap()
                 }
             )
         );
@@ -49,5 +43,4 @@ impl RedditAPIClient {
         let v: serde_json::Value = serde_json::from_str(&response.text().unwrap())?;
         return Ok(v);
     }
-
 }
