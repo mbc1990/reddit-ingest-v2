@@ -9,9 +9,9 @@ extern crate reqwest;
 use rand::Rng;
 use std::fs::File;
 use std::io::{Write};
+use std::{thread, time};
 use std::env;
 use std::io::Read;
-use std::thread;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
@@ -19,8 +19,10 @@ use reqwest::Client;
 use reqwest::header::{Headers, Authorization, Basic, UserAgent};
 use std::collections::HashMap;
 use std::io;
+use reddit_api_task::RedditAPITask;
 
 mod reddit_api_client;
+mod reddit_api_task;
 mod config;
 
 fn authenticate(client_id: String, client_secret: String, user_agent: String) -> String {
@@ -176,10 +178,27 @@ pub fn worker(rx_work_queue: Receiver<RedditAPITask>, tx_output: Sender<String>,
     }
 }
 
-pub struct RedditAPITask {
-    task_type: String,
-    query: String,
-    auth_token: String
+fn start_recurring_queries(client_id: String, client_secret: String, user_agent: String, subreddits: Vec<String>, tx_work_queue: Sender<RedditAPITask>) {
+    loop {
+        let auth_token = authenticate(client_id.clone(), client_secret.clone(), user_agent.clone());
+        for subreddit in subreddits.iter() {
+            let copied_input = subreddit.clone();
+            let task = RedditAPITask {
+                task_type: "subreddit".parse().unwrap(),
+                query: copied_input,
+                auth_token: auth_token.clone()
+            };
+            let res = tx_work_queue.send(task);
+            match res {
+                Ok(_val) => {}
+                Err(e) => {
+                    println!("Faiure to send work to manager: {:?}", e);
+                }
+            }
+        }
+        let one_second = time::Duration::from_millis(1000);
+        thread::sleep(one_second);
+    }
 }
 
 fn main() {
@@ -197,9 +216,7 @@ fn main() {
 
     let decoded: config::Config = toml::from_str(&input).unwrap();
 
-    let initial_auth_token = authenticate(decoded.client_id.clone(), decoded.client_secret.clone(), decoded.user_agent.clone());
-
-    // These are the first tasks to be passed to workers
+    // Subreddits to query
     let subreddits = decoded.subreddits.clone();
 
     // Channels for sending work to workers
@@ -221,30 +238,32 @@ fn main() {
             worker(rx_work_queue, out_sender, tx_work_queue.clone(), user_agent);
         });
     }
+    let client_id = decoded.client_id.clone();
+    let client_secret = decoded.client_secret.clone();
+    let user_agent = decoded.user_agent.clone();
 
+    // Start the queue manager (disributes work to workers)
     thread::spawn(move || {
         queue_manager(rx_work_queue, worker_txs, decoded.num_workers.clone() as usize);
     });
 
-    for subreddit in subreddits.iter() {
-        let copied_input = subreddit.clone();
-        let task = RedditAPITask {
-            task_type: "subreddit".parse().unwrap(),
-            query: copied_input,
-            auth_token: initial_auth_token.clone()
-        };
-        let res = tx_work_queue.send(task);
-        match res {
-            Ok(_val) => {
-            }
-            Err(e) => {
-                println!("Faiure to send work to manager: {:?}", e);
-            }
-        }
-    }
+    // Start the loop that re-enqueues the input subreddits every n seconds
+    thread::spawn(move || {
+        start_recurring_queries(client_id.clone(), client_secret.clone(), user_agent.clone(), subreddits, tx_work_queue.clone());
+    });
+
+    // Prevent duplication of comments from subsequent API requests
+    let mut seen_comments = HashMap::new();
 
     // Write all downloaded comments to stdout
     for output in rx_output.iter() {
+
+        //Handle deduplication
+        if seen_comments.contains_key(&output.clone()) {
+            continue;
+        }
+        seen_comments.insert(output.clone(), true);
+
         let data_res = io::stdout().write(output.as_ref());
         match data_res {
             Ok(_) => {}
