@@ -8,6 +8,7 @@ extern crate reqwest;
 
 use rand::Rng;
 use std::fs::File;
+use std::io::{Write};
 use std::env;
 use std::io::Read;
 use std::thread;
@@ -17,6 +18,7 @@ use std::sync::mpsc::Sender;
 use reqwest::Client;
 use reqwest::header::{Headers, Authorization, Basic, UserAgent};
 use std::collections::HashMap;
+use std::io;
 
 mod reddit_api_client;
 mod config;
@@ -200,8 +202,6 @@ fn main() {
     // These are the first tasks to be passed to workers
     let subreddits = decoded.subreddits.clone();
 
-    let num_workers = 16;
-
     // Channels for sending work to workers
     let mut worker_txs = Vec::new();
 
@@ -212,7 +212,7 @@ fn main() {
     let (tx_work_queue, rx_work_queue) = channel();
 
     // Start the workers
-    for _i in 0..num_workers {
+    for _i in 0..decoded.num_workers.clone() {
         let (tx_work_queue, rx_work_queue) = channel();
         worker_txs.push(tx_work_queue.clone());
         let out_sender = tx_output.clone();
@@ -223,7 +223,7 @@ fn main() {
     }
 
     thread::spawn(move || {
-        queue_manager(rx_work_queue, worker_txs, num_workers);
+        queue_manager(rx_work_queue, worker_txs, decoded.num_workers.clone() as usize);
     });
 
     for subreddit in subreddits.iter() {
@@ -243,12 +243,20 @@ fn main() {
         }
     }
 
-    let needles = vec!["democrat", "liberal"];
+    // Write all downloaded comments to stdout
     for output in rx_output.iter() {
-        for needle in needles.iter() {
-            if output.contains(needle) {
-                println!("{:?}", output.as_str());
-                // TODO: Write to slack
+        let data_res = io::stdout().write(output.as_ref());
+        match data_res {
+            Ok(_) => {}
+            Err(e) => {
+                println!("failed to write to stdout: {:?}", e);
+            }
+        }
+        let newline_res = io::stdout().write(b"\n");
+        match newline_res {
+            Ok(_) => {}
+            Err(e) => {
+                println!("failed to write to stdout: {:?}", e);
             }
         }
     }
