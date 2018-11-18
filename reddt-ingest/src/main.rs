@@ -196,8 +196,7 @@ fn start_recurring_queries(client_id: String, client_secret: String, user_agent:
                 }
             }
         }
-        let one_second = time::Duration::from_millis(1000);
-        thread::sleep(one_second);
+        thread::sleep(time::Duration::from_millis(10000));
     }
 }
 
@@ -242,7 +241,7 @@ fn main() {
     let client_secret = decoded.client_secret.clone();
     let user_agent = decoded.user_agent.clone();
 
-    // Start the queue manager (disributes work to workers)
+    // Start the queue manager (distributes work to workers)
     thread::spawn(move || {
         queue_manager(rx_work_queue, worker_txs, decoded.num_workers.clone() as usize);
     });
