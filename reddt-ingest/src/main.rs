@@ -26,6 +26,7 @@ mod reddit_api_task;
 mod config;
 
 fn authenticate(client_id: String, client_secret: String, user_agent: String) -> String {
+    // N.B. For running the binary directly, make sure you specify SSL_CERT_DIR=/etc/ssl/certs
     let client = Client::new();
     let auth_endpoint = "https://www.reddit.com/api/v1/access_token";
     let mut headers = Headers::new();
@@ -110,7 +111,7 @@ pub fn queue_manager(rx_incoming_tasks: Receiver<RedditAPITask>, worker_txs: Vec
                 }
             }
             Err(err) => {
-                println!("Failure to read task in queue worker: {:?}", err);
+                println!("Failure to read task in queue worker: {:?}", err.to_string());
             }
         }
     }
