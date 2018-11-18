@@ -15,7 +15,7 @@ pub struct RedditAPIClient {
 impl RedditAPIClient {
 
     pub fn new(user_agent: String) -> RedditAPIClient {
-        let mut rac = RedditAPIClient{
+        let rac = RedditAPIClient{
             user_agent
         };
         rac

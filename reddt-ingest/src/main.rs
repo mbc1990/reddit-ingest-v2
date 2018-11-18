@@ -89,20 +89,16 @@ pub fn parse_comment_tree(entry: &serde_json::Value) -> Vec<String> {
 
 // Anyone can submit a new task, this assigns it to a worker
 pub fn queue_manager(rx_incoming_tasks: Receiver<RedditAPITask>, worker_txs: Vec<Sender<RedditAPITask>>, num_workers: usize) {
-    println!("Queue manager has initialized");
     loop {
         let new_work = rx_incoming_tasks.recv();
-        println!("Queue manager received some work");
         match new_work {
             Ok(task) => {
                 let worker_idx = rand::thread_rng().gen_range(0, num_workers);
                 let worker = worker_txs.get(worker_idx).unwrap();
-                let query = task.query.clone();
                 let res = worker.send(task);
 
                 match res {
                     Ok(_val) => {
-                        println!("Successfully enqueued {:?}", query);
                     }
                     Err(e) => {
                         println!("Faiure to enqueue: {:?}", e);
@@ -116,10 +112,7 @@ pub fn queue_manager(rx_incoming_tasks: Receiver<RedditAPITask>, worker_txs: Vec
     }
 }
 
-// TODO: If this is the "subreddit" worker, it should have another sender to enqueue comments requests
-// pub fn worker(tx_output: Sender<String>, tx_auth_manager: Sender<String>, rx_work_queue: Receiver<String>, rx_auth_manager: Receiver<String>) {
-// TODO: this should handle subreddit queries AND comment queries
-pub fn worker(rx_work_queue: Receiver<RedditAPITask>, tx_output: Sender<String>, user_agent: String) {
+pub fn worker(rx_work_queue: Receiver<RedditAPITask>, tx_output: Sender<String>, tx_work_queue: Sender<RedditAPITask>, user_agent: String) {
     let client = reddit_api_client::RedditAPIClient::new(user_agent);
     loop {
         let new_work = rx_work_queue.recv();
@@ -129,7 +122,6 @@ pub fn worker(rx_work_queue: Receiver<RedditAPITask>, tx_output: Sender<String>,
 
                 // Perform subreddit api query
                 if task.task_type == "subreddit" {
-                    println!("Subreddit task received");
                     let subreddit_result = client.do_authenticated_request_with_token(api_path, &task.auth_token);
                     match subreddit_result {
                         Ok(val) => {
@@ -137,13 +129,18 @@ pub fn worker(rx_work_queue: Receiver<RedditAPITask>, tx_output: Sender<String>,
                             for their_story in stories.iter() {
                                 let permalink = &their_story["data"]["permalink"];
                                 let comments_query = &[permalink.as_str().unwrap(), "?sort=new"].concat();
-                                // TODO: This request should be queued, not done in the same thread as the subreddit request
-                                let comments = client.do_authenticated_request_with_token(comments_query, &task.auth_token).unwrap();
-                                for entry in comments.as_array().unwrap().iter() {
-                                    let mut comments_for_story = 0;
-                                    let raw_comments = parse_comment_tree(&entry);
-                                    for comment in raw_comments.iter() {
-                                        tx_output.send(comment.to_string()) ;
+                                let task = RedditAPITask {
+                                    task_type: "comments".parse().unwrap(),
+                                    query: comments_query.parse().unwrap(),
+                                    auth_token: task.auth_token.clone()
+                                };
+
+                                // Enqueue the comments api request
+                                let res = tx_work_queue.send(task);
+                                match res {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        println!("Error sending comments task {:?}", e);
                                     }
                                 }
                             }
@@ -154,62 +151,27 @@ pub fn worker(rx_work_queue: Receiver<RedditAPITask>, tx_output: Sender<String>,
 
                     }
                 } else if task.task_type == "comments" {
-                    println!("Comments task");
-                    /*
-                    let comment_result = client.do_authenticated_request_with_token(api_path, &task.auth_token);
-                    match comment_result {
-                        Ok(val) => {
-                            for entry in val.as_array().iter() {
-                                let mut comments_for_story = 0;
-                                let raw_comments = parse_comment_tree(entry);
-                                for comment in raw_comments.iter() {
-                                    tx_output.send(comment.to_string()) ;
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            println ! ("Error getting comments: {:?}", e)
-                        }
-                    }
-                    */
-                }
-                /*
-                let api_path = &["/r/", task.query.as_str()].concat();
-                let subreddit_result = client.do_authenticated_request_with_token(api_path, &task.auth_token);
-                match subreddit_result {
-                    Ok(val) => {
-                        let stories = val["data"]["children"].as_array().unwrap();
-                        for their_story in stories.iter() {
-                            let permalink = &their_story["data"]["permalink"];
-                            let comments_query = &[permalink.as_str().unwrap(), "?sort=new"].concat();
-                            // TODO: This request should be queued, not done in the same thread as the subreddit request
-                            let comments = client.do_authenticated_request_with_token(comments_query, &task.auth_token).unwrap();
-                            for entry in comments.as_array().unwrap().iter() {
-                                let mut comments_for_story = 0;
-                                let raw_comments = parse_comment_tree(&entry);
-                                for comment in raw_comments.iter() {
-                                   tx_output.send(comment.to_string()) ;
+                    // Perform comments api request
+                    let comments = client.do_authenticated_request_with_token(&task.query, &task.auth_token).unwrap();
+                    for entry in comments.as_array().unwrap().iter() {
+                        let raw_comments = parse_comment_tree(&entry);
+                        for comment in raw_comments.iter() {
+                            let result = tx_output.send(comment.to_string());
+                            match result {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    println!("Error sending output {:?}", e);
                                 }
                             }
                         }
                     }
-                    Err(e) => {
-                        println!("Error getting subreddit: {:?}", e)
-                    }
-
                 }
-                */
             }
             Err(_e) => {
-                // println!("Error receiving from queue (no data?)")
+                println!("Error receiving from worker queue")
             }
         }
     }
-}
-
-// Repeat query every n seconds
-pub fn start(subreddits: Vec<String>, num_workers: i32, worker_txs: Vec<Sender<String>>) {
-
 }
 
 pub struct RedditAPITask {
@@ -246,20 +208,20 @@ fn main() {
     // Channels for communicating output back to main thread
     let (tx_output, rx_output) = channel();
 
+    // Queue worker receives tasks and assigns them to workers
+    let (tx_work_queue, rx_work_queue) = channel();
+
     // Start the workers
     for _i in 0..num_workers {
         let (tx_work_queue, rx_work_queue) = channel();
         worker_txs.push(tx_work_queue.clone());
         let out_sender = tx_output.clone();
-        let auth = initial_auth_token.clone();
         let user_agent = decoded.user_agent.clone();
         thread::spawn(move || {
-            worker(rx_work_queue, out_sender, user_agent);
+            worker(rx_work_queue, out_sender, tx_work_queue.clone(), user_agent);
         });
     }
 
-    // Queue worker receives tasks and assigns them to workers
-    let (tx_work_queue, rx_work_queue) = channel();
     thread::spawn(move || {
         queue_manager(rx_work_queue, worker_txs, num_workers);
     });
@@ -274,7 +236,6 @@ fn main() {
         let res = tx_work_queue.send(task);
         match res {
             Ok(_val) => {
-                println!("Successfully sent work to manager {:?}",  subreddit);
             }
             Err(e) => {
                 println!("Faiure to send work to manager: {:?}", e);
