@@ -5,7 +5,9 @@ extern crate serde;
 extern crate toml;
 extern crate rand;
 extern crate reqwest;
+extern crate clap;
 
+use clap::{Arg, App, SubCommand};
 use rand::Rng;
 use std::fs::File;
 use std::io::{Write};
@@ -96,12 +98,13 @@ pub fn parse_comment_tree(entry: &serde_json::Value) -> Vec<String> {
 pub fn queue_manager(rx_incoming_tasks: Receiver<RedditAPITask>, worker_txs: Vec<Sender<RedditAPITask>>, num_workers: usize) {
     loop {
         let new_work = rx_incoming_tasks.recv();
+        println!("Queue manager receiving work...");
         match new_work {
             Ok(task) => {
                 let worker_idx = rand::thread_rng().gen_range(0, num_workers);
                 let worker = worker_txs.get(worker_idx).unwrap();
                 let res = worker.send(task);
-
+                // TODO: Is there some sugar for this?
                 match res {
                     Ok(_val) => {
                     }
@@ -121,6 +124,7 @@ pub fn worker(rx_work_queue: Receiver<RedditAPITask>, tx_output: Sender<String>,
     let client = reddit_api_client::RedditAPIClient::new(user_agent);
     loop {
         let new_work = rx_work_queue.recv();
+        println!("Worker received an API task");
         match new_work {
             Ok(task) => {
                 let api_path = &["/r/", task.query.as_str()].concat();
@@ -179,6 +183,26 @@ pub fn worker(rx_work_queue: Receiver<RedditAPITask>, tx_output: Sender<String>,
     }
 }
 
+fn start_single_story(client_id: String, client_secret: String, user_agent: String, url: String, tx_work_queue: Sender<RedditAPITask>) {
+    loop {
+        println!("Sending single story task");
+        let auth_token = authenticate(client_id.clone(), client_secret.clone(), user_agent.clone());
+        let task = RedditAPITask {
+            task_type: "comments".parse().unwrap(),
+            query: url.clone(),
+            auth_token: auth_token.clone()
+        };
+        let res = tx_work_queue.send(task);
+        match res {
+            Ok(_val) => {}
+            Err(e) => {
+                println!("Faiure to send work to manager: {:?}", e);
+            }
+        }
+        thread::sleep(time::Duration::from_millis(30000));
+    }
+}
+
 fn start_recurring_queries(client_id: String, client_secret: String, user_agent: String, subreddits: Vec<String>, tx_work_queue: Sender<RedditAPITask>) {
     loop {
         let auth_token = authenticate(client_id.clone(), client_secret.clone(), user_agent.clone());
@@ -202,17 +226,36 @@ fn start_recurring_queries(client_id: String, client_secret: String, user_agent:
 }
 
 fn main() {
-    let mut args = env::args();
+    // TODO: Option for toml subreddit list input
+    // TODO: Optional?
+    let matches = App::new("rt")
+        .arg(Arg::with_name("config")
+            .short("c")
+            .long("config")
+            .value_name("FILE")
+            .help("Sets a custom config file")
+            .takes_value(true))
+        .arg(Arg::with_name("url")
+            .short("u")
+            .long("url_to_reddit_comments")
+            .help("link to tail")
+            .takes_value(true))
+        .get_matches();
+
+    // Gets a value for config if supplied by user, or defaults to "default.conf"
+    let config = matches.value_of("config").unwrap_or("Config.toml");
+    println!("Value for config: {}", config);
+
+    // TODO: Strip host if present
+    // TODO: Optional param
+    let mut url = matches.value_of("url").unwrap_or("Config.toml");
+
+
     let mut input = String::new();
-    if args.len() > 1 {
-        let name = args.nth(1).unwrap();
-        File::open(&name).and_then(|mut f| {
-            f.read_to_string(&mut input)
-        }).unwrap();
-    } else {
-        println!("Must pass in file name of configuration");
-        return
-    }
+
+    File::open(&config).and_then(|mut f| {
+        f.read_to_string(&mut input)
+    }).unwrap();
 
     let decoded: config::Config = toml::from_str(&input).unwrap();
 
@@ -247,10 +290,19 @@ fn main() {
         queue_manager(rx_work_queue, worker_txs, decoded.num_workers.clone() as usize);
     });
 
+    // tail a single story's comments
+    let single_story_url = url.to_string();
+    thread::spawn(move || {
+        start_single_story(client_id.clone(), client_secret.clone(), user_agent.clone(), single_story_url, tx_work_queue.clone());
+    });
+
     // Start the loop that re-enqueues the input subreddits every n seconds
+    // TODO: Should be command line parameter
+    /*
     thread::spawn(move || {
         start_recurring_queries(client_id.clone(), client_secret.clone(), user_agent.clone(), subreddits, tx_work_queue.clone());
     });
+    */
 
     // Prevent duplication of comments from subsequent API requests
     let mut seen_comments = HashMap::new();
