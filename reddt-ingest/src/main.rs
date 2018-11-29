@@ -121,43 +121,44 @@ pub fn worker(rx_work_queue: Receiver<RedditAPITask>, tx_output: Sender<String>,
     let client = reddit_api_client::RedditAPIClient::new(user_agent);
     loop {
         let new_work = rx_work_queue.recv();
-        match new_work {
-            Ok(task) => {
-                let api_path = &["/r/", task.query.as_str()].concat();
+        let task = new_work.unwrap();
+        let api_path = &["/r/", task.query.as_str()].concat();
 
-                // Perform subreddit api query
-                if task.task_type == "subreddit" {
-                    let subreddit_result = client.do_authenticated_request_with_token(api_path, &task.auth_token);
-                    match subreddit_result {
-                        Ok(val) => {
-                            let stories = val["data"]["children"].as_array().unwrap();
-                            for their_story in stories.iter() {
-                                let permalink = &their_story["data"]["permalink"];
-                                let comments_query = &[permalink.as_str().unwrap(), "?sort=new"].concat();
-                                let task = RedditAPITask {
-                                    task_type: "comments".parse().unwrap(),
-                                    query: comments_query.parse().unwrap(),
-                                    auth_token: task.auth_token.clone()
-                                };
+        // Perform subreddit api query
+        if task.task_type == "subreddit" {
+            let subreddit_result = client.do_authenticated_request_with_token(api_path, &task.auth_token);
+            match subreddit_result {
+                Ok(val) => {
+                    let stories = val["data"]["children"].as_array().unwrap();
+                    for their_story in stories.iter() {
+                        let permalink = &their_story["data"]["permalink"];
+                        let comments_query = &[permalink.as_str().unwrap(), "?sort=new"].concat();
+                        let task = RedditAPITask {
+                            task_type: "comments".parse().unwrap(),
+                            query: comments_query.parse().unwrap(),
+                            auth_token: task.auth_token.clone()
+                        };
 
-                                // Enqueue the comments api request
-                                let res = tx_work_queue.send(task);
-                                match res {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        println!("Error sending comments task {:?}", e);
-                                    }
-                                }
+                        // Enqueue the comments api request
+                        let res = tx_work_queue.send(task);
+                        match res {
+                            Ok(_) => {}
+                            Err(e) => {
+                                println!("Error sending comments task {:?}", e);
                             }
                         }
-                        Err(e) => {
-                            println!("Error getting subreddit: {:?}", e)
-                        }
-
                     }
-                } else if task.task_type == "comments" {
-                    // Perform comments api request
-                    let comments = client.do_authenticated_request_with_token(&task.query, &task.auth_token).unwrap();
+                }
+                Err(e) => {
+                    println!("Error getting subreddit: {:?}", e)
+                }
+
+            }
+        } else if task.task_type == "comments" {
+            // Perform comments api request
+            let comments_result = client.do_authenticated_request_with_token(&task.query, &task.auth_token);
+            match comments_result {
+                Ok(comments) => {
                     for entry in comments.as_array().unwrap().iter() {
                         let raw_comments = parse_comment_tree(&entry);
                         for comment in raw_comments.iter() {
@@ -171,9 +172,9 @@ pub fn worker(rx_work_queue: Receiver<RedditAPITask>, tx_output: Sender<String>,
                         }
                     }
                 }
-            }
-            Err(_e) => {
-                println!("Error receiving from worker queue")
+                Err(e) => {
+                    println!("Error downloading comments {:?} ", e);
+                }
             }
         }
     }
@@ -264,6 +265,7 @@ fn main() {
         }
         seen_comments.insert(output.clone(), true);
 
+        // let data_res = io::stdout().write(output.as_ref());
         let data_res = io::stdout().write(output.as_ref());
         match data_res {
             Ok(_) => {}
