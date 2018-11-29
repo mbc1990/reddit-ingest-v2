@@ -217,12 +217,12 @@ fn main() {
 
     // Start the workers
     for _i in 0..decoded.num_workers.clone() {
-        let (tx_work_queue, rx_work_queue) = channel();
-        worker_txs.push(tx_work_queue.clone());
+        let (worker_tx, worker_rx) = channel();
+        worker_txs.push(worker_tx.clone());
         let out_sender = tx_output.clone();
         let user_agent = decoded.user_agent.clone();
         thread::spawn(move || {
-            worker(rx_work_queue, out_sender, tx_work_queue.clone(), user_agent);
+            worker(worker_rx, out_sender, worker_tx.clone(), user_agent);
         });
     }
     let client_id = decoded.client_id.clone();
