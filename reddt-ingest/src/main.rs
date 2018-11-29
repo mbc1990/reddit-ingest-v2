@@ -124,56 +124,42 @@ pub fn worker(rx_work_queue: Receiver<RedditAPITask>, tx_output: Sender<String>,
         let task = new_work.unwrap();
         let api_path = &["/r/", task.query.as_str()].concat();
 
-        // Perform subreddit api query
+        // Get top stories on a subreddit and enqueue requests for their comments
         if task.task_type == "subreddit" {
             let subreddit_result = client.do_authenticated_request_with_token(api_path, &task.auth_token);
-            match subreddit_result {
-                Ok(val) => {
-                    let stories = val["data"]["children"].as_array().unwrap();
-                    for their_story in stories.iter() {
-                        let permalink = &their_story["data"]["permalink"];
-                        let comments_query = &[permalink.as_str().unwrap(), "?sort=new"].concat();
-                        let task = RedditAPITask {
-                            task_type: "comments".parse().unwrap(),
-                            query: comments_query.parse().unwrap(),
-                            auth_token: task.auth_token.clone()
-                        };
+            let val = subreddit_result.unwrap();
+            let stories = val["data"]["children"].as_array().unwrap();
+            for their_story in stories.iter() {
+                let permalink = &their_story["data"]["permalink"];
+                let comments_query = &[permalink.as_str().unwrap(), "?sort=new"].concat();
+                let task = RedditAPITask {
+                    task_type: "comments".parse().unwrap(),
+                    query: comments_query.parse().unwrap(),
+                    auth_token: task.auth_token.clone()
+                };
 
-                        // Enqueue the comments api request
-                        let res = tx_work_queue.send(task);
-                        match res {
-                            Ok(_) => {}
-                            Err(e) => {
-                                println!("Error sending comments task {:?}", e);
-                            }
-                        }
+                // Enqueue the comments api request
+                let res = tx_work_queue.send(task);
+                match res {
+                    Ok(_) => {}
+                    Err(e) => {
+                        println!("Error sending comments task {:?}", e);
                     }
                 }
-                Err(e) => {
-                    println!("Error getting subreddit: {:?}", e)
-                }
-
             }
-        } else if task.task_type == "comments" {
-            // Perform comments api request
+        } else if task.task_type == "comments" { // Query and traverse comment tree
             let comments_result = client.do_authenticated_request_with_token(&task.query, &task.auth_token);
-            match comments_result {
-                Ok(comments) => {
-                    for entry in comments.as_array().unwrap().iter() {
-                        let raw_comments = parse_comment_tree(&entry);
-                        for comment in raw_comments.iter() {
-                            let result = tx_output.send(comment.to_string());
-                            match result {
-                                Ok(_) => {}
-                                Err(e) => {
-                                    println!("Error sending output {:?}", e);
-                                }
-                            }
+            let comments = comments_result.unwrap();
+            for entry in comments.as_array().unwrap().iter() {
+                let raw_comments = parse_comment_tree(&entry);
+                for comment in raw_comments.iter() {
+                    let result = tx_output.send(comment.to_string());
+                    match result {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error sending output {:?}", e);
                         }
                     }
-                }
-                Err(e) => {
-                    println!("Error downloading comments {:?} ", e);
                 }
             }
         }
