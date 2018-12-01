@@ -23,6 +23,7 @@ use reddit_api_task::RedditAPITask;
 
 mod reddit_api_client;
 mod reddit_api_task;
+mod reddit_worker;
 mod config;
 
 fn authenticate(client_id: String, client_secret: String, user_agent: String) -> String {
@@ -57,41 +58,6 @@ fn authenticate(client_id: String, client_secret: String, user_agent: String) ->
     return json.access_token;
 }
 
-pub fn parse_comment_tree(entry: &serde_json::Value) -> Vec<String> {
-    let mut comments = Vec::new();
-    if entry["data"]["children"].is_null() {
-        return comments;
-    }
-
-    let inner_entries = entry["data"]["children"].as_array().unwrap().to_owned();
-    for inner in inner_entries.iter() {
-
-        // First get the current (parent) comment's text
-        let comment_body = &inner["data"]["body"].to_string();
-        comments.push(comment_body.to_string());
-
-        // If replies are null, that means either there are no more, or we need to make a request to /morechildren
-        if inner["data"]["replies"].is_null() {
-            if inner["kind"] == "more" {
-                continue;
-                //  println!("Trying to get more comments for {:?}", inner);
-                // TODO: Make a request for more comments, and continue parsing recursively
-                // TODO: This seems to be the endpoint api/morechildren
-            } else {
-                // We are at a leaf of a comment tree and can stop
-                continue;
-            }
-        }
-
-        // Go over the children and recursively gather their comments
-        let children = &inner["data"]["replies"];
-        let child_comments = parse_comment_tree(children);
-        comments.append(&mut child_comments.clone());
-    }
-
-    return comments;
-}
-
 // Anyone can submit a new task, this assigns it to a worker
 pub fn queue_manager(rx_incoming_tasks: Receiver<RedditAPITask>, worker_txs: Vec<Sender<RedditAPITask>>, num_workers: usize) {
     loop {
@@ -117,54 +83,6 @@ pub fn queue_manager(rx_incoming_tasks: Receiver<RedditAPITask>, worker_txs: Vec
     }
 }
 
-pub fn worker(rx_work_queue: Receiver<RedditAPITask>, tx_output: Sender<String>, tx_work_queue: Sender<RedditAPITask>, user_agent: String) {
-    let client = reddit_api_client::RedditAPIClient::new(user_agent);
-    loop {
-        let new_work = rx_work_queue.recv();
-        let task = new_work.unwrap();
-        let api_path = &["/r/", task.query.as_str()].concat();
-
-        // Get top stories on a subreddit and enqueue requests for their comments
-        if task.task_type == "subreddit" {
-            let subreddit_result = client.do_authenticated_request_with_token(api_path, &task.auth_token);
-            let val = subreddit_result.unwrap();
-            let stories = val["data"]["children"].as_array().unwrap();
-            for their_story in stories.iter() {
-                let permalink = &their_story["data"]["permalink"];
-                let comments_query = &[permalink.as_str().unwrap(), "?sort=new"].concat();
-                let task = RedditAPITask {
-                    task_type: "comments".parse().unwrap(),
-                    query: comments_query.parse().unwrap(),
-                    auth_token: task.auth_token.clone()
-                };
-
-                // Enqueue the comments api request
-                let res = tx_work_queue.send(task);
-                match res {
-                    Ok(_) => {}
-                    Err(e) => {
-                        println!("Error sending comments task {:?}", e);
-                    }
-                }
-            }
-        } else if task.task_type == "comments" { // Query and traverse comment tree
-            let comments_result = client.do_authenticated_request_with_token(&task.query, &task.auth_token);
-            let comments = comments_result.unwrap();
-            for entry in comments.as_array().unwrap().iter() {
-                let raw_comments = parse_comment_tree(&entry);
-                for comment in raw_comments.iter() {
-                    let result = tx_output.send(comment.to_string());
-                    match result {
-                        Ok(_) => {}
-                        Err(e) => {
-                            println!("Error sending output {:?}", e);
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 fn start_recurring_queries(client_id: String, client_secret: String, user_agent: String, subreddits: Vec<String>, tx_work_queue: Sender<RedditAPITask>) {
     loop {
@@ -222,7 +140,10 @@ fn main() {
         let out_sender = tx_output.clone();
         let user_agent = decoded.user_agent.clone();
         thread::spawn(move || {
-            worker(worker_rx, out_sender, worker_tx.clone(), user_agent);
+            let worker = reddit_worker::RedditWorker::new(worker_rx, out_sender, worker_tx.clone(), user_agent.clone());
+            worker.start();
+            // TODO: Create worker struct
+            // worker(worker_rx, out_sender, worker_tx.clone(), user_agent);
         });
     }
     let client_id = decoded.client_id.clone();
