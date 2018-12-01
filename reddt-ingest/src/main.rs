@@ -21,10 +21,14 @@ use std::collections::HashMap;
 use std::io;
 use reddit_api_task::RedditAPITask;
 
-mod reddit_api_client;
 mod reddit_api_task;
 mod reddit_worker;
 mod config;
+
+#[derive(Deserialize)]
+pub struct AuthResponse {
+    pub access_token: String
+}
 
 fn authenticate(client_id: String, client_secret: String, user_agent: String) -> String {
     // N.B. For running the binary directly, make sure you specify SSL_CERT_DIR=/etc/ssl/certs
@@ -54,7 +58,7 @@ fn authenticate(client_id: String, client_secret: String, user_agent: String) ->
         .send()
         .unwrap();
 
-    let json: reddit_api_client::AuthResponse = response.json().unwrap();
+    let json: AuthResponse = response.json().unwrap();
     return json.access_token;
 }
 

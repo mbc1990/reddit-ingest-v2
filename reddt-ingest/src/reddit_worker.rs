@@ -3,23 +3,23 @@ extern crate serde_json;
 use std::sync::mpsc::Receiver;
 use reddit_api_task::RedditAPITask;
 use std::sync::mpsc::Sender;
-use reddit_api_client;
+use reqwest::Client;
+use reqwest::header::{Headers, Authorization, UserAgent, Bearer};
 
 pub struct RedditWorker {
     rx_work_queue: Receiver<RedditAPITask>,
     tx_output: Sender<String> ,
     tx_work_queue: Sender<RedditAPITask>,
-    client: reddit_api_client::RedditAPIClient
+    user_agent: String
 }
 
 impl RedditWorker {
     pub fn new(rx_work_queue: Receiver<RedditAPITask>, tx_output: Sender<String>, tx_work_queue: Sender<RedditAPITask>, user_agent: String) -> RedditWorker {
-        let client = reddit_api_client::RedditAPIClient::new(user_agent);
         let rw = RedditWorker {
             rx_work_queue,
             tx_output,
             tx_work_queue,
-            client
+            user_agent
         };
         rw
     }
@@ -38,7 +38,7 @@ impl RedditWorker {
 
     fn process_subreddit(&self, task: RedditAPITask) {
         let api_path = &["/r/", task.query.as_str()].concat();
-        let subreddit_result = self.client.do_authenticated_request_with_token(api_path, &task.auth_token);
+        let subreddit_result = self.do_authenticated_request_with_token(api_path, &task.auth_token);
         let val = subreddit_result.unwrap();
         let stories = val["data"]["children"].as_array().unwrap();
         for their_story in stories.iter() {
@@ -62,7 +62,7 @@ impl RedditWorker {
     }
 
     fn process_comments(&self, task: RedditAPITask) {
-        let comments_result = self.client.do_authenticated_request_with_token(&task.query, &task.auth_token);
+        let comments_result = self.do_authenticated_request_with_token(&task.query, &task.auth_token);
         let comments = comments_result.unwrap();
         for entry in comments.as_array().unwrap().iter() {
             let raw_comments = self.parse_comment_tree(&entry);
@@ -112,5 +112,28 @@ impl RedditWorker {
         }
 
         return comments;
+    }
+
+    pub fn do_authenticated_request_with_token(&self, api_path: &String, auth_token: &String) -> Result<serde_json::Value, serde_json::Error> {
+        let url = &["https://oauth.reddit.com/", api_path].concat();
+        let client = Client::new();
+        let mut headers = Headers::new();
+        headers.set(
+            Authorization(
+                Bearer {
+                    token: auth_token.parse().unwrap()
+                }
+            )
+        );
+        headers.set(UserAgent::new(self.user_agent.clone()));
+
+        // TODO: Add error handling - this is where auth failures will come from
+        let mut response = client.get(url)
+            .headers(headers)
+            .send()
+            .expect("Failed to send request");
+
+        let v: serde_json::Value = serde_json::from_str(&response.text().unwrap())?;
+        return Ok(v);
     }
 }
